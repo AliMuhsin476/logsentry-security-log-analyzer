@@ -1,12 +1,13 @@
 from pathlib import Path
-import tkinter as tk
 from tkinter import filedialog, messagebox, ttk
+from datetime import datetime
 
 import customtkinter as ctk
 
 from log_analyzer import (
     count_failed_attempts_by_ip,
     detect_brute_force_attacks,
+    detect_log_format,
     determine_risk_level,
     find_failed_logins,
     read_log_file,
@@ -98,17 +99,17 @@ class LogSentryApp(ctk.CTk):
             sticky="w",
         )
 
-        dashboard_button = ctk.CTkButton(
+        dashboard_label = ctk.CTkLabel(
             sidebar,
             text="Dashboard",
             height=42,
             anchor="w",
             corner_radius=8,
             fg_color=self.PANEL_LIGHT,
-            hover_color=self.BORDER,
             text_color=self.TEXT,
+            padx=14,
         )
-        dashboard_button.grid(
+        dashboard_label.grid(
             row=3,
             column=0,
             padx=18,
@@ -345,30 +346,110 @@ class LogSentryApp(ctk.CTk):
         )
         table_panel.grid(row=0, column=0, padx=(0, 8), sticky="nsew")
         table_panel.grid_columnconfigure(0, weight=1)
-        table_panel.grid_rowconfigure(1, weight=1)
+        table_panel.grid_rowconfigure(2, weight=1)
+
+        table_header = ctk.CTkFrame(
+            table_panel,
+            fg_color="transparent",
+        )
+        table_header.grid(
+            row=0,
+            column=0,
+            padx=18,
+            pady=14,
+            sticky="ew",
+        )
+        table_header.grid_columnconfigure(0, weight=1)
 
         table_title = ctk.CTkLabel(
-            table_panel,
+            table_header,
             text="IP Risk Analysis",
             font=ctk.CTkFont(size=15, weight="bold"),
             text_color=self.TEXT,
         )
-        table_title.grid(row=0, column=0, padx=18, pady=16, sticky="w")
+        table_title.grid(row=0, column=0, sticky="w")
+
+        self.search_entry = ctk.CTkEntry(
+            table_header,
+            width=170,
+            height=32,
+            placeholder_text="Search IP address",
+            corner_radius=7,
+            fg_color=self.BACKGROUND,
+            border_color=self.BORDER,
+            text_color=self.TEXT,
+        )
+        self.search_entry.grid(row=0, column=1, padx=(10, 8))
+        self.search_entry.bind(
+            "<KeyRelease>",
+            lambda event: self.update_results_table(),
+        )
+
+        self.risk_filter = ctk.CTkOptionMenu(
+            table_header,
+            values=["All Risks", "HIGH", "MEDIUM", "LOW"],
+            command=lambda selected_value: self.update_results_table(),
+            width=115,
+            height=32,
+            corner_radius=7,
+            fg_color=self.PANEL_LIGHT,
+            button_color=self.BORDER,
+            button_hover_color=self.ACCENT,
+        )
+        self.risk_filter.set("All Risks")
+        self.risk_filter.grid(row=0, column=2)
 
         self.configure_table_style()
 
         columns = ("ip", "attempts", "risk", "status")
+
+        column_header = ctk.CTkFrame(
+            table_panel,
+            height=36,
+            corner_radius=0,
+            fg_color=self.PANEL_LIGHT,
+        )
+        column_header.grid(
+            row=1,
+            column=0,
+            padx=15,
+            sticky="ew",
+        )
+        column_header.grid_propagate(False)
+
+        header_items = [
+            ("IP ADDRESS", 2),
+            ("ATTEMPTS", 1),
+            ("RISK", 1),
+            ("STATUS", 1),
+        ]
+
+        for column_index, (header_text, column_weight) in enumerate(
+            header_items
+        ):
+            column_header.grid_columnconfigure(
+                column_index,
+                weight=column_weight,
+            )
+            header_label = ctk.CTkLabel(
+                column_header,
+                text=header_text,
+                font=ctk.CTkFont(size=10, weight="bold"),
+                text_color=self.MUTED,
+            )
+            header_label.grid(
+                row=0,
+                column=column_index,
+                sticky="nsew",
+            )
+
         self.results_table = ttk.Treeview(
             table_panel,
             columns=columns,
-            show="headings",
+            show="",
             style="LogSentry.Treeview",
+            takefocus=False,
         )
-
-        self.results_table.heading("ip", text="IP ADDRESS")
-        self.results_table.heading("attempts", text="ATTEMPTS")
-        self.results_table.heading("risk", text="RISK")
-        self.results_table.heading("status", text="STATUS")
 
         self.results_table.column("ip", width=170, anchor="w")
         self.results_table.column("attempts", width=90, anchor="center")
@@ -380,7 +461,7 @@ class LogSentryApp(ctk.CTk):
         self.results_table.tag_configure("LOW", foreground=self.LOW)
 
         self.results_table.grid(
-            row=1,
+            row=2,
             column=0,
             padx=15,
             pady=(0, 15),
@@ -432,14 +513,14 @@ class LogSentryApp(ctk.CTk):
         style.theme_use("clam")
 
         style.layout(
-    "LogSentry.Treeview",
-    [
-        (
-            "LogSentry.Treeview.treearea",
-            {"sticky": "nsew"},
+            "LogSentry.Treeview",
+            [
+                (
+                    "Treeview.treearea",
+                    {"sticky": "nsew"},
+                )
+            ],
         )
-    ],
-)
 
         style.configure(
             "LogSentry.Treeview",
@@ -448,15 +529,11 @@ class LogSentryApp(ctk.CTk):
             foreground=self.TEXT,
             rowheight=38,
             borderwidth=0,
-            font=("Helvetica Neue", 11),
-        )
-
-        style.configure(
-            "LogSentry.Treeview.Heading",
-            background=self.PANEL_LIGHT,
-            foreground=self.MUTED,
             relief="flat",
-            font=("Helvetica Neue", 10, "bold"),
+            bordercolor=self.BACKGROUND,
+            lightcolor=self.BACKGROUND,
+            darkcolor=self.BACKGROUND,
+            font=("Helvetica Neue", 11),
         )
 
         style.map(
@@ -494,6 +571,8 @@ class LogSentryApp(ctk.CTk):
             return
 
         log_records = read_log_file(self.selected_file)
+        log_format = detect_log_format(log_records)
+        analysis_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         failed_records = find_failed_logins(log_records)
         ip_attempt_counts = count_failed_attempts_by_ip(failed_records)
         suspicious_ips = detect_brute_force_attacks(ip_attempt_counts)
@@ -510,7 +589,16 @@ class LogSentryApp(ctk.CTk):
             "ip_attempt_counts": ip_attempt_counts,
             "suspicious_ips": suspicious_ips,
             "high_risk": high_risk_count,
+            "log_format": log_format,
+            "analysis_time": analysis_time,
         }
+        self.file_label.configure(
+            text=(
+                f"{self.selected_file.name}   |   "
+                f"Format: {log_format}   |   "
+                f"Analyzed: {analysis_time}"
+            )
+        )
 
         self.update_stat_cards()
         self.update_results_table()
@@ -540,8 +628,14 @@ class LogSentryApp(ctk.CTk):
         for item in self.results_table.get_children():
             self.results_table.delete(item)
 
+        if not self.analysis_results:
+            return
+
         ip_attempt_counts = self.analysis_results["ip_attempt_counts"]
         suspicious_ips = self.analysis_results["suspicious_ips"]
+
+        search_query = self.search_entry.get().strip().lower()
+        selected_risk = self.risk_filter.get()
 
         sorted_results = sorted(
             ip_attempt_counts.items(),
@@ -551,6 +645,13 @@ class LogSentryApp(ctk.CTk):
 
         for ip_address, attempt_count in sorted_results:
             risk_level = determine_risk_level(attempt_count)
+
+            if search_query and search_query not in ip_address.lower():
+                continue
+
+            if selected_risk != "All Risks" and risk_level != selected_risk:
+                continue
+
             status = (
                 "ALERT"
                 if ip_address in suspicious_ips
@@ -604,6 +705,8 @@ class LogSentryApp(ctk.CTk):
     def clear_results(self):
         self.selected_file = None
         self.analysis_results = {}
+        self.search_entry.delete(0, "end")
+        self.risk_filter.set("All Risks")
 
         self.file_label.configure(text="No file selected")
         self.analyze_button.configure(state="disabled")

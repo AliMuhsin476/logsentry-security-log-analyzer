@@ -12,7 +12,20 @@ def read_log_file(file_path):
         print("Error: Log file not found.")
         return []
 
+def detect_log_format(log_records):
+    for line in log_records:
+        lowercase_line = line.lower()
 
+        if "sshd[" in lowercase_line:
+            return "Linux SSH"
+
+        if (
+            "login_failed" in lowercase_line
+            or "login_success" in lowercase_line
+        ):
+            return "LogSentry Custom"
+
+    return "Unknown"
 def find_failed_logins(log_records):
     failed_logins = []
 
