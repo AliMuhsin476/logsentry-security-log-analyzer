@@ -9,6 +9,7 @@ from log_analyzer import (
     detect_brute_force_attacks,
     detect_log_format,
     determine_risk_level,
+    extract_ip_address,
     find_failed_logins,
     read_log_file,
 )
@@ -450,6 +451,10 @@ class LogSentryApp(ctk.CTk):
             style="LogSentry.Treeview",
             takefocus=False,
         )
+        self.results_table.bind(
+            "<<TreeviewSelect>>",
+            self.show_selected_ip_details,
+        )
 
         self.results_table.column("ip", width=170, anchor="w")
         self.results_table.column("attempts", width=90, anchor="center")
@@ -586,6 +591,7 @@ class LogSentryApp(ctk.CTk):
         self.analysis_results = {
             "total_events": len(log_records),
             "failed_logins": len(failed_records),
+            "failed_records": failed_records,
             "ip_attempt_counts": ip_attempt_counts,
             "suspicious_ips": suspicious_ips,
             "high_risk": high_risk_count,
@@ -669,6 +675,54 @@ class LogSentryApp(ctk.CTk):
                 ),
                 tags=(risk_level,),
             )
+
+    def show_selected_ip_details(self, event=None):
+        selected_items = self.results_table.selection()
+
+        if not selected_items or not self.analysis_results:
+            return
+
+        selected_values = self.results_table.item(
+            selected_items[0],
+            "values",
+        )
+
+        if not selected_values:
+            return
+
+        ip_address = selected_values[0]
+        attempt_count = int(selected_values[1])
+        risk_level = selected_values[2]
+        status = selected_values[3]
+
+        related_records = [
+            record
+            for record in self.analysis_results["failed_records"]
+            if extract_ip_address(record) == ip_address
+        ]
+
+        detail_lines = [
+            "IP INVESTIGATION DETAILS",
+            "=" * 34,
+            f"Source IP: {ip_address}",
+            f"Failed attempts: {attempt_count}",
+            f"Risk level: {risk_level}",
+            f"Status: {status}",
+            "",
+            "RELATED LOG EVENTS",
+            "-" * 34,
+        ]
+
+        if related_records:
+            for record_number, record in enumerate(
+                related_records,
+                start=1,
+            ):
+                detail_lines.append(f"{record_number}. {record}")
+        else:
+            detail_lines.append("No related log events found.")
+
+        self.set_alert_text("\n\n".join(detail_lines))
 
     def update_alert_panel(self):
         suspicious_ips = self.analysis_results["suspicious_ips"]
