@@ -1,5 +1,8 @@
+## CREATED BY ALİ MUHSİN TAYFUN
+
 from pathlib import Path
 import re
+from datetime import datetime, timedelta
 
 
 def read_log_file(file_path):
@@ -58,7 +61,40 @@ def extract_ip_address(log_line):
         return match.group(1)
 
     return None
+def extract_timestamp(log_line):
+    custom_pattern = (
+        r"^(\d{4}-\d{2}-\d{2} "
+        r"\d{2}:\d{2}:\d{2})"
+    )
 
+    custom_match = re.search(custom_pattern, log_line)
+
+    if custom_match:
+        timestamp_text = custom_match.group(1)
+
+        return datetime.strptime(
+            timestamp_text,
+            "%Y-%m-%d %H:%M:%S",
+        )
+
+    linux_pattern = (
+        r"^([A-Z][a-z]{2}\s+"
+        r"\d{1,2}\s+"
+        r"\d{2}:\d{2}:\d{2})"
+    )
+
+    linux_match = re.search(linux_pattern, log_line)
+
+    if linux_match:
+        current_year = datetime.now().year
+        timestamp_text = linux_match.group(1)
+
+        return datetime.strptime(
+            f"{current_year} {timestamp_text}",
+            "%Y %b %d %H:%M:%S",
+    )
+
+    return None
 
 def count_failed_attempts_by_ip(failed_records):
     ip_counts = {}
@@ -96,16 +132,67 @@ def detect_brute_force_attacks(ip_attempt_counts, threshold=5):
             suspicious_ips.append(ip_address)
 
     return suspicious_ips
+def detect_brute_force_in_time_window(
+    failed_records,
+    threshold=5,
+    window_minutes=5,
+):
+    events_by_ip = {}
 
+    for record in failed_records:
+        ip_address = extract_ip_address(record)
+        timestamp = extract_timestamp(record)
+
+        if ip_address is None or timestamp is None:
+            continue
+
+        if ip_address not in events_by_ip:
+            events_by_ip[ip_address] = []
+
+        events_by_ip[ip_address].append(timestamp)
+
+    suspicious_ips = []
+    time_window = timedelta(minutes=window_minutes)
+
+    for ip_address, timestamps in events_by_ip.items():
+        timestamps.sort()
+
+        for start_index in range(len(timestamps)):
+            window_attempts = 0
+            start_time = timestamps[start_index]
+
+            for timestamp in timestamps[start_index:]:
+                if timestamp - start_time <= time_window:
+                    window_attempts += 1
+                else:
+                    break
+
+            if window_attempts >= threshold:
+                suspicious_ips.append(ip_address)
+                break
+
+    return suspicious_ips
 
 def main():
     project_folder = Path(__file__).resolve().parent.parent
-    sample_file = project_folder / "sample_logs" / "sample_auth.txt"
+    sample_file = project_folder / "sample_logs" / "spread_out_attempts.txt"
 
     log_records = read_log_file(sample_file)
     failed_records = find_failed_logins(log_records)
+
+    print("\nExtracted timestamps:")
+
+    for record in failed_records:
+        timestamp = extract_timestamp(record)
+        print(timestamp)
+
+
     ip_attempt_counts = count_failed_attempts_by_ip(failed_records)
-    suspicious_ips = detect_brute_force_attacks(ip_attempt_counts)
+    suspicious_ips = detect_brute_force_in_time_window(
+        failed_records,
+        threshold=5,
+        window_minutes=5,
+    )
 
     print(f"Total log records: {len(log_records)}")
     print(f"Failed login attempts: {len(failed_records)}")

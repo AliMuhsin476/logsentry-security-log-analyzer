@@ -1,0 +1,5 @@
+2026-09-12 10:00:00 | LOGIN_FAILED | user=admin | ip=203.0.113.50
+2026-09-12 10:10:00 | LOGIN_FAILED | user=admin | ip=203.0.113.50
+2026-09-12 10:20:00 | LOGIN_FAILED | user=admin | ip=203.0.113.50
+2026-09-12 10:30:00 | LOGIN_FAILED | user=admin | ip=203.0.113.50
+2026-09-12 10:40:00 | LOGIN_FAILED | user=admin | ip=203.0.113.50

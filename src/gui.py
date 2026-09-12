@@ -6,7 +6,7 @@ import customtkinter as ctk
 
 from log_analyzer import (
     count_failed_attempts_by_ip,
-    detect_brute_force_attacks,
+    detect_brute_force_in_time_window,
     detect_log_format,
     determine_risk_level,
     extract_ip_address,
@@ -580,7 +580,11 @@ class LogSentryApp(ctk.CTk):
         analysis_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         failed_records = find_failed_logins(log_records)
         ip_attempt_counts = count_failed_attempts_by_ip(failed_records)
-        suspicious_ips = detect_brute_force_attacks(ip_attempt_counts)
+        suspicious_ips = detect_brute_force_in_time_window(
+            failed_records,
+            threshold=5,
+            window_minutes=5,
+)
 
         high_risk_count = sum(
             1
