@@ -58,7 +58,7 @@ class LogSentryApp(ctk.CTk):
         )
         sidebar.grid(row=0, column=0, sticky="nsew")
         sidebar.grid_propagate(False)
-        sidebar.grid_rowconfigure(8, weight=1)
+        sidebar.grid_rowconfigure(10, weight=1)
 
         brand = ctk.CTkLabel(
             sidebar,
@@ -131,6 +131,95 @@ class LogSentryApp(ctk.CTk):
             border_color=self.BORDER,
             text_color=self.TEXT,
         )
+        rules_label = ctk.CTkLabel(
+            sidebar,
+            text="DETECTION RULES",
+            font=ctk.CTkFont(size=10, weight="bold"),
+            text_color=self.MUTED,
+        )
+
+        rules_label.grid(
+            row=5,
+            column=0,
+            padx=25,
+            pady=(22, 8),
+            sticky="w",
+        )
+
+        rules_frame = ctk.CTkFrame(
+            sidebar,
+            fg_color="transparent",
+        )
+        rules_frame.grid(
+            row=6,
+            column=0,
+            padx=18,
+            sticky="ew",
+        )
+
+        rules_frame.grid_columnconfigure((0, 1), weight=1)
+        threshold_label = ctk.CTkLabel(
+        rules_frame,
+            text="Attempts",
+            font=ctk.CTkFont(size=10),
+            text_color=self.MUTED,
+        )
+
+        threshold_label.grid(
+            row=0,
+            column=0,
+            padx=(0, 4),
+        )
+
+        window_label = ctk.CTkLabel(
+            rules_frame,
+            text="Minutes",
+            font=ctk.CTkFont(size=10),
+            text_color=self.MUTED,
+        )
+
+        window_label.grid(
+            row=0,
+            column=1,
+            padx=(4, 0),
+        )
+        self.threshold_entry = ctk.CTkEntry(
+            rules_frame,
+            width=82,
+            height=34,
+            justify="center",
+            fg_color=self.BACKGROUND,
+            border_color=self.BORDER,
+        )
+
+        self.threshold_entry.grid(
+            row=1,
+            column=0,
+            padx=(0, 4),
+            pady=(4, 0),
+        )
+
+        self.threshold_entry.insert(0, "5")
+
+        self.window_entry = ctk.CTkEntry(
+            rules_frame,
+            width=82,
+            height=34,
+            justify="center",
+            fg_color=self.BACKGROUND,
+            border_color=self.BORDER,
+        )
+
+        self.window_entry.grid(
+            row=1,
+            column=1,
+            padx=(4, 0),
+            pady=(4, 0),
+        )
+
+        self.window_entry.insert(0, "5")
+
+
         self.select_file_button.grid(
             row=4,
             column=0,
@@ -152,7 +241,7 @@ class LogSentryApp(ctk.CTk):
             state="disabled",
         )
         self.analyze_button.grid(
-            row=5,
+            row=7,
             column=0,
             padx=18,
             pady=(18, 5),
@@ -171,7 +260,7 @@ class LogSentryApp(ctk.CTk):
             text_color=self.MUTED,
         )
         clear_button.grid(
-            row=6,
+            row=8,
             column=0,
             padx=18,
             pady=5,
@@ -190,7 +279,7 @@ class LogSentryApp(ctk.CTk):
             text_color=self.MUTED,
         )
         export_button.grid(
-            row=7,
+            row=9,
             column=0,
             padx=18,
             pady=5,
@@ -205,7 +294,7 @@ class LogSentryApp(ctk.CTk):
             text_color=self.MUTED,
         )
         footer.grid(
-            row=9,
+            row=11,
             column=0,
             padx=25,
             pady=25,
@@ -574,6 +663,19 @@ class LogSentryApp(ctk.CTk):
                 "Please select a log file before running the analysis.",
             )
             return
+        try:
+            threshold = int(self.threshold_entry.get())
+            window_minutes = int(self.window_entry.get())
+
+            if threshold <= 0 or window_minutes <= 0:
+                raise ValueError
+
+        except ValueError:
+            messagebox.showerror(
+                "Invalid Detection Rules",
+                "Attempts and minutes must be positive whole numbers.",
+            )
+            return
 
         log_records = read_log_file(self.selected_file)
         log_format = detect_log_format(log_records)
@@ -582,9 +684,9 @@ class LogSentryApp(ctk.CTk):
         ip_attempt_counts = count_failed_attempts_by_ip(failed_records)
         suspicious_ips = detect_brute_force_in_time_window(
             failed_records,
-            threshold=5,
-            window_minutes=5,
-)
+            threshold=threshold,
+            window_minutes=window_minutes,
+        )
 
         high_risk_count = sum(
             1
@@ -601,6 +703,8 @@ class LogSentryApp(ctk.CTk):
             "high_risk": high_risk_count,
             "log_format": log_format,
             "analysis_time": analysis_time,
+            "threshold": threshold,
+            "window_minutes": window_minutes,
         }
         self.file_label.configure(
             text=(
@@ -730,29 +834,46 @@ class LogSentryApp(ctk.CTk):
 
     def update_alert_panel(self):
         suspicious_ips = self.analysis_results["suspicious_ips"]
+        threshold = self.analysis_results["threshold"]
+        window_minutes = self.analysis_results["window_minutes"]
+
+        detection_rule = (
+            f"{threshold} failed attempts "
+            f"within {window_minutes} minutes"
+        )
 
         if not suspicious_ips:
             self.set_alert_text(
-                "Analysis completed.\n\n"
+                "ANALYSIS COMPLETED\n\n"
+                f"Detection rule: {detection_rule}\n\n"
                 "No potential brute-force attacks were detected."
             )
             return
 
-        alerts = ["HIGH-PRIORITY SECURITY ALERT\n"]
+        alerts = [
+            "HIGH-PRIORITY SECURITY ALERT",
+            "",
+            f"Detection rule: {detection_rule}",
+            "",
+        ]
 
         for ip_address in suspicious_ips:
             attempt_count = self.analysis_results[
                 "ip_attempt_counts"
             ][ip_address]
 
-            alerts.append(
-                f"[BRUTE FORCE]\n"
-                f"Source IP: {ip_address}\n"
-                f"Failed attempts: {attempt_count}\n"
-                f"Risk level: HIGH\n"
+            alerts.extend(
+                [
+                    "[BRUTE FORCE]",
+                    f"Source IP: {ip_address}",
+                    f"Total failed attempts: {attempt_count}",
+                    "Risk level: HIGH",
+                    "",
+                ]
             )
 
         self.set_alert_text("\n".join(alerts))
+        
 
     def set_alert_text(self, message):
         self.alert_textbox.configure(state="normal")
