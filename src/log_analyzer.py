@@ -1,4 +1,5 @@
 from pathlib import Path
+import re
 
 
 def read_log_file(file_path):
@@ -15,18 +16,33 @@ def read_log_file(file_path):
 def find_failed_logins(log_records):
     failed_logins = []
 
+    failure_indicators = (
+        "LOGIN_FAILED",
+        "Failed password",
+        "authentication failure",
+    )
+
     for line in log_records:
-        if "LOGIN_FAILED" in line:
+        if any(
+            indicator.lower() in line.lower()
+            for indicator in failure_indicators
+        ):
             failed_logins.append(line.strip())
 
     return failed_logins
 
 
 def extract_ip_address(log_line):
-    parts = log_line.split("ip=", 1)
+    ip_pattern = r"(?:ip=|from\s+)(\d{1,3}(?:\.\d{1,3}){3})"
 
-    if len(parts) == 2:
-        return parts[1].strip()
+    match = re.search(
+        ip_pattern,
+        log_line,
+        re.IGNORECASE,
+    )
+
+    if match:
+        return match.group(1)
 
     return None
 

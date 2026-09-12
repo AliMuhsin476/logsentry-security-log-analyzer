@@ -431,6 +431,16 @@ class LogSentryApp(ctk.CTk):
         style = ttk.Style()
         style.theme_use("clam")
 
+        style.layout(
+    "LogSentry.Treeview",
+    [
+        (
+            "LogSentry.Treeview.treearea",
+            {"sticky": "nsew"},
+        )
+    ],
+)
+
         style.configure(
             "LogSentry.Treeview",
             background=self.BACKGROUND,
