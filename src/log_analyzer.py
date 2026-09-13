@@ -5,6 +5,7 @@ import re
 from datetime import datetime, timedelta
 
 
+
 def read_log_file(file_path):
     try:
         with open(file_path, "r", encoding="utf-8") as log_file:

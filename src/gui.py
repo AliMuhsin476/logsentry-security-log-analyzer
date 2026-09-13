@@ -42,6 +42,10 @@ class LogSentryApp(ctk.CTk):
 
         self.selected_file = None
         self.analysis_results = {}
+        self.is_monitoring = False
+        self.monitor_job = None
+        self.last_file_size = 0
+        self.monitor_interval_ms = 2000
 
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(1, weight=1)
@@ -58,7 +62,7 @@ class LogSentryApp(ctk.CTk):
         )
         sidebar.grid(row=0, column=0, sticky="nsew")
         sidebar.grid_propagate(False)
-        sidebar.grid_rowconfigure(10, weight=1)
+        sidebar.grid_rowconfigure(11, weight=1)
 
         brand = ctk.CTkLabel(
             sidebar,
@@ -247,6 +251,26 @@ class LogSentryApp(ctk.CTk):
             pady=(18, 5),
             sticky="ew",
         )
+        self.live_button = ctk.CTkButton(
+            sidebar,
+            text="Start Live Monitoring",
+            command=self.toggle_live_monitoring,
+            height=42,
+            anchor="w",
+            corner_radius=8,
+            fg_color="#17324D",
+            hover_color=self.BORDER,
+            text_color=self.ACCENT,
+            state="disabled",
+        )
+
+        self.live_button.grid(
+            row=8,
+            column=0,
+            padx=18,
+            pady=(8, 5),
+            sticky="ew",
+        )
 
         clear_button = ctk.CTkButton(
             sidebar,
@@ -260,7 +284,7 @@ class LogSentryApp(ctk.CTk):
             text_color=self.MUTED,
         )
         clear_button.grid(
-            row=8,
+            row=9,
             column=0,
             padx=18,
             pady=5,
@@ -279,7 +303,7 @@ class LogSentryApp(ctk.CTk):
             text_color=self.MUTED,
         )
         export_button.grid(
-            row=9,
+            row=10,
             column=0,
             padx=18,
             pady=5,
@@ -294,7 +318,7 @@ class LogSentryApp(ctk.CTk):
             text_color=self.MUTED,
         )
         footer.grid(
-            row=11,
+            row=12,
             column=0,
             padx=25,
             pady=25,
@@ -635,6 +659,100 @@ class LogSentryApp(ctk.CTk):
             background=[("selected", self.BORDER)],
         )
 
+    def toggle_live_monitoring(self):
+        if self.is_monitoring:
+            self.stop_live_monitoring()
+        else:
+            self.start_live_monitoring()
+
+
+    def start_live_monitoring(self):
+        if self.selected_file is None:
+            messagebox.showwarning(
+                "No File Selected",
+                "Please select a log file before starting live monitoring.",
+            )
+            return
+
+        try:
+            self.last_file_size = self.selected_file.stat().st_size
+
+        except OSError as error:
+            messagebox.showerror(
+                "Monitoring Error",
+                f"The selected file cannot be monitored:\n{error}",
+            )
+            return
+
+        self.is_monitoring = True
+
+        self.live_button.configure(
+            text="Stop Live Monitoring",
+            fg_color=self.HIGH,
+            hover_color="#D94B57",
+            text_color=self.TEXT,
+        )
+
+        self.status_badge.configure(
+            text="  LIVE MONITORING  ",
+            fg_color="#103C38",
+            text_color=self.ACCENT,
+        )
+
+        self.monitor_log_file()
+
+    def stop_live_monitoring(self):
+        self.is_monitoring = False
+
+        if self.monitor_job is not None:
+            self.after_cancel(self.monitor_job)
+            self.monitor_job = None
+
+        self.live_button.configure(
+            text="Start Live Monitoring",
+            fg_color="#17324D",
+            hover_color=self.BORDER,
+            text_color=self.ACCENT,
+        )
+
+        self.status_badge.configure(
+            text="  MONITORING STOPPED  ",
+            fg_color=self.PANEL_LIGHT,
+            text_color=self.MUTED,
+        )
+
+    def monitor_log_file(self):
+        if not self.is_monitoring:
+            return
+
+        try:
+            current_file_size = self.selected_file.stat().st_size
+
+        except OSError as error:
+            self.stop_live_monitoring()
+
+            messagebox.showerror(
+                "Monitoring Error",
+                f"The monitored file cannot be read:\n{error}",
+            )
+            return
+
+        if current_file_size != self.last_file_size:
+            self.last_file_size = current_file_size
+            self.run_analysis()
+
+            if self.is_monitoring:
+                self.status_badge.configure(
+                    text="  LIVE MONITORING  ",
+                    fg_color="#103C38",
+                    text_color=self.ACCENT,
+                )
+
+        self.monitor_job = self.after(
+            self.monitor_interval_ms,
+            self.monitor_log_file,
+        )
+
     def select_log_file(self):
         file_path = filedialog.askopenfilename(
             title="Select a security log file",
@@ -647,9 +765,13 @@ class LogSentryApp(ctk.CTk):
         if not file_path:
             return
 
+        if self.is_monitoring:
+            self.stop_live_monitoring()
+
         self.selected_file = Path(file_path)
         self.file_label.configure(text=str(self.selected_file))
         self.analyze_button.configure(state="normal")
+        self.live_button.configure(state="normal")
         self.status_badge.configure(
             text="  READY TO ANALYZE  ",
             fg_color=self.PANEL_LIGHT,
@@ -882,6 +1004,9 @@ class LogSentryApp(ctk.CTk):
         self.alert_textbox.configure(state="disabled")
 
     def clear_results(self):
+        if self.is_monitoring:
+            self.stop_live_monitoring()
+
         self.selected_file = None
         self.analysis_results = {}
         self.search_entry.delete(0, "end")
@@ -889,6 +1014,13 @@ class LogSentryApp(ctk.CTk):
 
         self.file_label.configure(text="No file selected")
         self.analyze_button.configure(state="disabled")
+        self.live_button.configure(
+            state="disabled",
+            text="Start Live Monitoring",
+            fg_color="#17324D",
+            hover_color=self.BORDER,
+            text_color=self.ACCENT,
+        )
 
         self.status_badge.configure(
             text="  WAITING FOR LOG FILE  ",
@@ -926,13 +1058,21 @@ class LogSentryApp(ctk.CTk):
 
         report_lines = [
             "LOGSENTRY SECURITY REPORT",
-            "=" * 40,
+            "=" * 50,
             f"Source file: {self.selected_file}",
+            f"Log format: {self.analysis_results['log_format']}",
+            f"Analysis time: {self.analysis_results['analysis_time']}",
+            (
+                "Detection rule: "
+                f"{self.analysis_results['threshold']} failed attempts "
+                f"within {self.analysis_results['window_minutes']} minutes"
+            ),
             f"Total events: {self.analysis_results['total_events']}",
             f"Failed logins: {self.analysis_results['failed_logins']}",
+            f"Suspicious IPs: {len(self.analysis_results['suspicious_ips'])}",
             "",
             "IP RISK ANALYSIS",
-            "-" * 40,
+            "-" * 50,
         ]
 
         for ip_address, attempt_count in sorted(
