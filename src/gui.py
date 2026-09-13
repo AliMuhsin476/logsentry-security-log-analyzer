@@ -45,6 +45,8 @@ class LogSentryApp(ctk.CTk):
         self.is_monitoring = False
         self.monitor_job = None
         self.last_file_size = 0
+        self.last_read_position = 0
+        self.live_log_records = []
         self.monitor_interval_ms = 2000
 
         self.grid_rowconfigure(0, weight=1)
@@ -675,9 +677,17 @@ class LogSentryApp(ctk.CTk):
             return
 
         try:
+            with open(
+                self.selected_file,
+                "r",
+                encoding="utf-8",
+            ) as log_file:
+                self.live_log_records = log_file.readlines()
+                self.last_read_position = log_file.tell()
+
             self.last_file_size = self.selected_file.stat().st_size
 
-        except OSError as error:
+        except (OSError, UnicodeError) as error:
             messagebox.showerror(
                 "Monitoring Error",
                 f"The selected file cannot be monitored:\n{error}",
@@ -728,7 +738,34 @@ class LogSentryApp(ctk.CTk):
         try:
             current_file_size = self.selected_file.stat().st_size
 
-        except OSError as error:
+            if current_file_size < self.last_file_size:
+                self.last_read_position = 0
+                self.live_log_records = []
+
+            if current_file_size != self.last_file_size:
+                with open(
+                    self.selected_file,
+                    "r",
+                    encoding="utf-8",
+                ) as log_file:
+                    log_file.seek(self.last_read_position)
+                    new_records = log_file.readlines()
+                    self.last_read_position = log_file.tell()
+
+                self.last_file_size = current_file_size
+
+                if new_records:
+                    self.live_log_records.extend(new_records)
+                    self.run_analysis(self.live_log_records)
+
+                    if self.is_monitoring:
+                        self.status_badge.configure(
+                            text="  LIVE MONITORING  ",
+                            fg_color="#103C38",
+                            text_color=self.ACCENT,
+                        )
+
+        except (OSError, UnicodeError) as error:
             self.stop_live_monitoring()
 
             messagebox.showerror(
@@ -736,17 +773,6 @@ class LogSentryApp(ctk.CTk):
                 f"The monitored file cannot be read:\n{error}",
             )
             return
-
-        if current_file_size != self.last_file_size:
-            self.last_file_size = current_file_size
-            self.run_analysis()
-
-            if self.is_monitoring:
-                self.status_badge.configure(
-                    text="  LIVE MONITORING  ",
-                    fg_color="#103C38",
-                    text_color=self.ACCENT,
-                )
 
         self.monitor_job = self.after(
             self.monitor_interval_ms,
@@ -778,7 +804,7 @@ class LogSentryApp(ctk.CTk):
             text_color=self.ACCENT,
         )
 
-    def run_analysis(self):
+    def run_analysis(self, log_records=None):
         if self.selected_file is None:
             messagebox.showwarning(
                 "No File Selected",
@@ -799,7 +825,8 @@ class LogSentryApp(ctk.CTk):
             )
             return
 
-        log_records = read_log_file(self.selected_file)
+        if log_records is None:
+            log_records = read_log_file(self.selected_file)
         log_format = detect_log_format(log_records)
         analysis_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         failed_records = find_failed_logins(log_records)
